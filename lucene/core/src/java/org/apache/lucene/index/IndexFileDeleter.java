@@ -384,6 +384,7 @@ final class IndexFileDeleter implements Closeable {
     // since we allow 'closing' state, we must still check this, we could be closing because we hit
     // e.g. OOM
     if (writer.getTragicException() != null) {
+      System.out.println("refusing to delete any files: this IndexWriter hit an unrecoverable exception");
       throw new AlreadyClosedException(
           "refusing to delete any files: this IndexWriter hit an unrecoverable exception",
           writer.getTragicException());

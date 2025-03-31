@@ -22,20 +22,7 @@ import static org.apache.lucene.util.ByteBlockPool.BYTE_BLOCK_SIZE;
 import java.io.Closeable;
 import java.io.IOException;
 import java.time.Instant;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Deque;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Queue;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Semaphore;
@@ -914,6 +901,7 @@ public class IndexWriter
    */
   protected final void ensureOpen(boolean failIfClosing) throws AlreadyClosedException {
     if (closed || (failIfClosing && closing)) {
+      System.out.println("ensure open " + closed + " " + failIfClosing + " " + closing);
       throw new AlreadyClosedException("this IndexWriter is closed", tragedy.get());
     }
   }
@@ -1367,8 +1355,10 @@ public class IndexWriter
   @Override
   public void close() throws IOException {
     if (config.getCommitOnClose()) {
+      System.out.println("index writer shutdown");
       shutdown();
     } else {
+      System.out.println("index writer rollback");
       rollback();
     }
   }
@@ -1561,6 +1551,9 @@ public class IndexWriter
         if (infoStream.isEnabled("IW")) {
           infoStream.message("IW", "hit exception updating document");
         }
+        try {
+          Thread.sleep(1000);
+        } catch (Exception e) {}
         maybeCloseOnTragicEvent();
       }
     }
@@ -2500,6 +2493,9 @@ public class IndexWriter
 
       docWriter.close(); // mark it as closed first to prevent subsequent indexing actions/flushes
       assert !Thread.holdsLock(this) : "IndexWriter lock should never be hold when aborting";
+      try {
+        Thread.sleep(5000);
+      } catch (Exception e) {}
       docWriter.abort(); // don't sync on IW here
       docWriter.flushControl.waitForFlush(); // wait for all concurrently running flushes
       publishFlushedSegments(
@@ -2549,7 +2545,7 @@ public class IndexWriter
         // after we leave this sync block and before we enter the sync block in the finally clause
         // below that sets closed:
         closed = true;
-
+        System.out.println("execute cleanupAndNotify");
         IOUtils.close(writeLock, cleanupAndNotify);
       }
     } catch (Throwable throwable) {
@@ -4558,12 +4554,14 @@ public class IndexWriter
   }
 
   @SuppressWarnings("try")
-  private synchronized boolean commitMerge(MergePolicy.OneMerge merge, MergeState.DocMap[] docMaps)
+  private synchronized boolean commitMerge(MergePolicy.OneMerge merge, MergeState.DocMap[] docMaps, UUID uuid)
       throws IOException {
     merge.onMergeComplete();
+    System.out.println("commit merge onMergeComplete " + uuid);
     testPoint("startCommitMerge");
 
     if (tragedy.get() != null) {
+      System.out.println("this writer hit an unrecoverable error " + uuid);
       throw new IllegalStateException(
           "this writer hit an unrecoverable error; cannot complete merge", tragedy.get());
     }
@@ -4575,6 +4573,8 @@ public class IndexWriter
 
     assert merge.registerDone;
 
+    System.out.println("commit merge before isAbort " + uuid);
+
     // If merge was explicitly aborted, or, if rollback() or
     // rollbackTransaction() had been called since our merge
     // started (which results in an unqualified
@@ -4582,6 +4582,7 @@ public class IndexWriter
     // file that current segments does not reference), we
     // abort this merge
     if (merge.isAborted()) {
+      System.out.println("commit merge abort " + uuid);
       if (infoStream.isEnabled("IW")) {
         infoStream.message("IW", "commitMerge: skip: it was aborted");
       }
@@ -4600,9 +4601,12 @@ public class IndexWriter
       return false;
     }
 
+    System.out.println("commit merge after isAbort " + uuid);
+
     final ReadersAndUpdates mergedUpdates =
         merge.info.info.maxDoc() == 0 ? null : commitMergedDeletesAndUpdates(merge, docMaps);
 
+//    System.out.println("commit merge after commitMergedDeletesAndUpdates " + merge.info.info.maxDoc() + " " + uuid);
     // If the doc store we are using has been closed and
     // is in now compound format (but wasn't when we
     // started), then we will switch to the compound
@@ -4630,6 +4634,7 @@ public class IndexWriter
 
     assert merge.info.info.maxDoc() != 0 || dropSegment;
 
+    System.out.println("commit merge mergedUpdates " + uuid);
     if (mergedUpdates != null) {
       boolean success = false;
       try {
@@ -4648,6 +4653,7 @@ public class IndexWriter
         }
       }
     }
+    System.out.println("commit merge applyMergeChanges " + uuid);
 
     // Must do this after readerPool.release, in case an
     // exception is hit e.g. writing the live docs for the
@@ -4733,7 +4739,7 @@ public class IndexWriter
    * @lucene.experimental
    */
   protected void merge(MergePolicy.OneMerge merge) throws IOException {
-
+    UUID uuid = UUID.randomUUID();
     boolean success = false;
 
     final long t0 = System.currentTimeMillis();
@@ -4742,16 +4748,22 @@ public class IndexWriter
     try {
       try {
         try {
+          System.out.println("start mergeInit " + uuid);
           mergeInit(merge);
+          System.out.println("end mergeInit " + uuid);
           if (infoStream.isEnabled("IW")) {
             infoStream.message(
                 "IW",
                 "now merge\n  merge=" + segString(merge.segments) + "\n  index=" + segString());
           }
-          mergeMiddle(merge, mergePolicy);
+          System.out.println("start mergeMiddle " + uuid);
+          mergeMiddle(merge, mergePolicy, uuid);
+          System.out.println("end mergeMiddle " + uuid);
           mergeSuccess(merge);
           success = true;
+          System.out.println("merge successful " + uuid);
         } catch (Throwable t) {
+          System.out.println("handleMergeException " + uuid);
           handleMergeException(t, merge);
         }
       } finally {
@@ -4943,6 +4955,11 @@ public class IndexWriter
     assert merge.registerDone;
     assert merge.maxNumSegments == UNBOUNDED_MAX_MERGE_SEGMENTS || merge.maxNumSegments > 0;
 
+    try {
+        Thread.sleep(2000);
+      } catch (Exception e) {
+    }
+
     if (tragedy.get() != null) {
       throw new IllegalStateException(
           "this writer hit an unrecoverable error; cannot merge", tragedy.get());
@@ -4978,6 +4995,7 @@ public class IndexWriter
       checkpoint();
     }
     boolean hasBlocks = false;
+    System.out.println("merge segments: " + merge.segments.stream().map(s -> s.info.name).toList());
     for (SegmentCommitInfo info : merge.segments) {
       if (info.info.getHasBlocks()) {
         hasBlocks = true;
@@ -5079,6 +5097,7 @@ public class IndexWriter
               } else {
                 rld.dropMergingUpdates();
               }
+              System.out.println("release merge reader " + sr.getSegmentInfo().info.name);
               rld.release(sr);
               release(rld);
               if (drop) {
@@ -5134,7 +5153,7 @@ public class IndexWriter
    * Does the actual (time-consuming) work of the merge, but without holding synchronized lock on
    * IndexWriter instance
    */
-  private int mergeMiddle(MergePolicy.OneMerge merge, MergePolicy mergePolicy) throws IOException {
+  private int mergeMiddle(MergePolicy.OneMerge merge, MergePolicy mergePolicy, UUID uuid) throws IOException {
     testPoint("mergeMiddleStart");
     merge.checkAborted();
 
@@ -5151,6 +5170,7 @@ public class IndexWriter
     // closed:
     boolean success = false;
     try {
+      System.out.println("start init merge reader " + uuid);
       merge.initMergeReaders(
           sci -> {
             final ReadersAndUpdates rld = getPooledInstance(sci, true);
@@ -5210,6 +5230,7 @@ public class IndexWriter
         mergeReaders.add(wrappedReader);
       }
 
+      System.out.println("end init merge reader " + uuid);
       final Executor intraMergeExecutor = mergeScheduler.getIntraMergeExecutor(merge);
 
       MergeState.DocMap[] reorderDocMaps = null;
@@ -5280,10 +5301,12 @@ public class IndexWriter
 
       merge.mergeStartNS = System.nanoTime();
 
+      System.out.println("start merge " + uuid);
       // This is where all the work happens:
       if (merger.shouldMerge()) {
         merger.merge();
       }
+      System.out.println("end merge " + uuid);
 
       assert mergeState.segmentInfo == merge.info.info;
       merge.info.info.setFiles(new HashSet<>(dirWrapper.getCreatedFiles()));
@@ -5337,7 +5360,7 @@ public class IndexWriter
         // Merge would produce a 0-doc segment, so we do nothing except commit the merge to remove
         // all the 0-doc segments that we "merged":
         assert merge.info.info.maxDoc() == 0;
-        success = commitMerge(merge, docMaps);
+        success = commitMerge(merge, docMaps, uuid);
         return 0;
       }
 
@@ -5424,6 +5447,7 @@ public class IndexWriter
       // and 2) .si reflects useCompoundFile=true change
       // above:
       boolean success2 = false;
+      System.out.println("start write merge info " + uuid);
       try {
         codec.segmentInfoFormat().write(directory, merge.info.info, context);
         success2 = true;
@@ -5433,6 +5457,7 @@ public class IndexWriter
           deleteNewFiles(merge.info.files());
         }
       }
+      System.out.println("end write merge info " + uuid);
 
       // TODO: ideally we would freeze merge.info here!!
       // because any changes after writing the .si will be
@@ -5462,11 +5487,14 @@ public class IndexWriter
         }
       }
 
-      if (!commitMerge(merge, docMaps)) {
+      System.out.println("start commit merge " + uuid);
+      if (!commitMerge(merge, docMaps, uuid)) {
         // commitMerge will return false if this merge was
         // aborted
+        System.out.println("end commit merge false " + uuid);
         return 0;
       }
+      System.out.println("end commit merge true " + uuid);
 
       success = true;
 
@@ -5474,6 +5502,7 @@ public class IndexWriter
       // Readers are already closed in commitMerge if we didn't hit
       // an exc:
       if (success == false) {
+        System.out.println("merge middle closeMergeReaders " + uuid);
         closeMergeReaders(merge, true, false);
       }
     }
@@ -6392,7 +6421,9 @@ public class IndexWriter
   private void finishApply(
       BufferedUpdatesStream.SegmentState[] segStates, boolean success, Set<String> delFiles)
       throws IOException {
+    System.out.println("finishApply before get lock");
     synchronized (this) {
+      System.out.println("finishApply after get lock");
       BufferedUpdatesStream.ApplyDeletesResult result;
       try {
         result = closeSegmentStates(segStates, success);
@@ -6443,6 +6474,7 @@ public class IndexWriter
         }
       }
     } finally {
+      System.out.println("execute closeSegmentStates");
       IOUtils.close(segStates);
     }
     if (infoStream.isEnabled("BD")) {

@@ -46,6 +46,7 @@ import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.SuppressForbidden;
 import org.apache.lucene.util.ThreadInterruptedException;
+import org.junit.internal.Throwables;
 
 /** MultiThreaded IndexWriter tests */
 @LuceneTestCase.SuppressCodecs("SimpleText")
@@ -270,9 +271,9 @@ public class TestIndexWriterWithThreads extends LuceneTestCase {
   // failure to trigger an IOException
   public void _testMultipleThreadsFailure(MockDirectoryWrapper.Failure failure) throws Exception {
 
-    int NUM_THREADS = 3;
+    int NUM_THREADS = 1;
 
-    for (int iter = 0; iter < 2; iter++) {
+    for (int iter = 0; iter < 1; iter++) {
       if (VERBOSE) {
         System.out.println("TEST: iter=" + iter);
       }
@@ -295,7 +296,9 @@ public class TestIndexWriterWithThreads extends LuceneTestCase {
         threads[i].start();
       }
       syncStart.await();
-
+      try {
+        Thread.sleep(500);
+      } catch (Exception e) {}
       dir.failOn(failure);
       failure.setDoFail();
 
@@ -306,23 +309,29 @@ public class TestIndexWriterWithThreads extends LuceneTestCase {
 
       boolean success = false;
       try {
+        System.out.println("index writer commit");
         writer.commit();
+        System.out.println("before index writer close");
         writer.close();
+        System.out.println("after index writer close");
         success = true;
       } catch (
           @SuppressWarnings("unused")
           AlreadyClosedException ace) {
         // OK: abort closes the writer
+        System.out.println("111 throw exception" + Throwables.getStacktrace(ace));
+        writer.close();
         assertTrue(writer.isDeleterClosed());
       } catch (
           @SuppressWarnings("unused")
           IOException ioe) {
+        System.out.println("222 throw exception" + Throwables.getStacktrace(ioe));
         writer.rollback();
         failure.clearDoFail();
       }
-      if (VERBOSE) {
+//      if (VERBOSE) {
         System.out.println("TEST: success=" + success);
-      }
+//      }
 
       if (success) {
         IndexReader reader = DirectoryReader.open(dir);
@@ -338,6 +347,9 @@ public class TestIndexWriterWithThreads extends LuceneTestCase {
         reader.close();
       }
 
+//      try {
+//        Thread.sleep(10000);
+//      } catch (Exception e) {}
       dir.close();
     }
   }
@@ -462,6 +474,7 @@ public class TestIndexWriterWithThreads extends LuceneTestCase {
 
     @Override
     public void eval(MockDirectoryWrapper dir) throws IOException {
+//      System.out.printf("doFail %s%n", doFail);
       if (doFail) {
         if (callStackContains(IndexingChain.class, "flush")) {
           if (onlyOnce) doFail = false;

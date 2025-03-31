@@ -545,6 +545,7 @@ final class DocumentsWriterPerThread implements Accountable, Lock {
       }
       return fs;
     } catch (Throwable t) {
+      System.out.println("dwpt exception: " + t);
       onAbortingException(t);
       throw t;
     } finally {

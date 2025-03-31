@@ -59,6 +59,7 @@ import org.apache.lucene.tests.util.TestUtil;
 import org.apache.lucene.tests.util.ThrottledIndexOutput;
 import org.apache.lucene.util.CollectionUtil;
 import org.apache.lucene.util.IOUtils;
+import org.junit.internal.Throwables;
 
 /**
  * This is a Directory Wrapper that adds methods intended to be used only by unit tests. It also
@@ -717,6 +718,7 @@ public class MockDirectoryWrapper extends BaseDirectoryWrapper {
     IndexOutput delegateOutput =
         in.createOutput(name, LuceneTestCase.newIOContext(randomState, context));
     final IndexOutput io = new MockIndexOutputWrapper(this, delegateOutput, name);
+    System.out.println("create output: " + name);
     addFileHandle(io, name, Handle.Output);
     openFilesForWrite.add(name);
     return maybeThrottle(name, io);
@@ -760,6 +762,7 @@ public class MockDirectoryWrapper extends BaseDirectoryWrapper {
     unSyncedFiles.add(name);
     createdFiles.add(name);
     final IndexOutput io = new MockIndexOutputWrapper(this, delegateOutput, name);
+    System.out.println("create temp output: " + name);
     addFileHandle(io, name, Handle.Output);
     openFilesForWrite.add(name);
 
@@ -844,6 +847,12 @@ public class MockDirectoryWrapper extends BaseDirectoryWrapper {
     } else {
       ii = new MockIndexInputWrapper(this, name, delegateInput, null, readAdvice, confined);
     }
+    System.out.println("openInput: " + name);
+    try {
+      throw new IOException("openInput: " + name);
+    } catch (Exception e) {
+      System.out.println(Throwables.getStacktrace(e));
+    }
     addFileHandle(ii, name, Handle.Input);
     return ii;
   }
@@ -877,7 +886,14 @@ public class MockDirectoryWrapper extends BaseDirectoryWrapper {
       if (openFiles.size() > 0) {
         // print the first one as it's very verbose otherwise
         Exception cause = null;
+        System.out.println("openFileHandles size " + openFileHandles.size());
         Iterator<Exception> stacktraces = openFileHandles.values().iterator();
+        while (stacktraces.hasNext()) {
+          cause = stacktraces.next();
+          System.out.println("cause: " + cause);
+        }
+
+        stacktraces = openFileHandles.values().iterator();
         if (stacktraces.hasNext()) {
           cause = stacktraces.next();
         }
@@ -1021,10 +1037,17 @@ public class MockDirectoryWrapper extends BaseDirectoryWrapper {
 
   public synchronized void removeIndexOutput(IndexOutput out, String name) {
     openFilesForWrite.remove(name);
+    System.out.println("removeIndexOutput: " + name);
     removeOpenFile(out, name);
   }
 
   public synchronized void removeIndexInput(IndexInput in, String name) {
+    System.out.println("removeIndexInput: " + name);
+    try {
+      throw new IOException("removeIndexInput: " + name);
+    } catch (Exception e) {
+      System.out.println(Throwables.getStacktrace(e));
+    }
     removeOpenFile(in, name);
   }
 

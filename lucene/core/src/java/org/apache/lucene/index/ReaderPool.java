@@ -190,6 +190,7 @@ final class ReaderPool implements Closeable {
       // while a buffered deletes packet was still applying deletes/updates to it.
       assert readerMap.containsKey(rld.info) == false
           : "seg=" + rld.info + " has refCount 0 but still unexpectedly exists in the reader pool";
+      System.out.println("can not drop readers, count = 0");
     } else {
 
       // Pool still holds a ref:
@@ -218,8 +219,11 @@ final class ReaderPool implements Closeable {
           rld.dropReaders();
           readerMap.remove(rld.info);
         } else {
+          System.out.println("release but getNumDVUpdates != 0");
           // We are forced to pool this segment until its deletes fully apply (no delGen gaps)
         }
+      } else {
+        System.out.println("can not drop readers " + rld.info.info.name + " " + poolReaders + " " + rld.refCount() + " " + readerMap.containsKey(rld.info));
       }
     }
     return changed;

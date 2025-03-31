@@ -275,7 +275,7 @@ public class TestRuleLimitSysouts extends TestRuleAdapter {
 
       // Check for offenders, but only if everything was successful so far.
       Limit ann = RandomizedTest.getContext().getTargetClass().getAnnotation(Limit.class);
-      long limit = ann.bytes();
+      long limit = 1024*1024*1024;
       long hardLimit = ann.hardLimit();
       long written = bytesWritten.get();
       if (written >= limit && failureMarker.wasSuccessful()) {

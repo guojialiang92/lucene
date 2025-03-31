@@ -17,6 +17,8 @@
 package org.apache.lucene.index;
 
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -179,15 +181,31 @@ final class ReadersAndUpdates {
       reader = new SegmentReader(info, indexCreatedVersionMajor, context);
       pendingDeletes.onNewReader(reader, info);
     }
-
     // Ref for caller
     reader.incRef();
+    try {
+      throw new IOException("inc ref " + reader.getSegmentName() + " " + reader.getRefCount());
+    } catch (Exception e) {
+      System.out.println(getStacktrace(e));
+    }
     return reader;
+  }
+
+  public static String getStacktrace(Throwable exception) {
+    StringWriter stringWriter = new StringWriter();
+    PrintWriter writer = new PrintWriter(stringWriter);
+    exception.printStackTrace(writer);
+    return stringWriter.toString();
   }
 
   public synchronized void release(SegmentReader sr) throws IOException {
     assert info == sr.getOriginalSegmentInfo();
     sr.decRef();
+    try {
+      throw new IOException("dec ref " + sr.getSegmentName() + " " + sr.getRefCount());
+    } catch (Exception e) {
+      System.out.println(getStacktrace(e));
+    }
   }
 
   public synchronized boolean delete(int docID) throws IOException {
@@ -204,6 +222,11 @@ final class ReadersAndUpdates {
     if (reader != null) {
       try {
         reader.decRef();
+        try {
+          throw new IOException("dec ref " + reader.getSegmentName() + " " + reader.getRefCount() + " " + "dropReaders");
+        } catch (Exception e) {
+          System.out.println(getStacktrace(e));
+        }
       } finally {
         reader = null;
       }
