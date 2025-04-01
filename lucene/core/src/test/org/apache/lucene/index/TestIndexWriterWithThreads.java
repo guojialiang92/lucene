@@ -18,6 +18,7 @@ package org.apache.lucene.index;
 
 import java.io.IOException;
 import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -91,6 +92,7 @@ public class TestIndexWriterWithThreads extends LuceneTestCase {
 
       do {
         try {
+          System.out.println("execute updateDocument");
           writer.updateDocument(new Term("id", "" + (idUpto++)), doc);
           addCount++;
         } catch (IOException ioe) {
@@ -273,20 +275,95 @@ public class TestIndexWriterWithThreads extends LuceneTestCase {
 
     int NUM_THREADS = 1;
 
+    CountDownLatch mergeCloseCountDownLatch = new CountDownLatch(1);
+    CountDownLatch updateDocumentFailCountDownLatch = new CountDownLatch(1);
+
+    ConcurrentMergeScheduler mergeScheduler = new ConcurrentMergeScheduler() {
+      @Override
+      public void close() throws IOException {
+        super.close();
+          try {
+              System.out.println("merge close");
+              mergeCloseCountDownLatch.countDown();
+              Thread.sleep(5000);
+          } catch (InterruptedException e) {
+              throw new RuntimeException(e);
+          }
+      }
+    };
+    mergeScheduler.setMaxMergesAndThreads(Integer.MAX_VALUE, Integer.MAX_VALUE);
+
     for (int iter = 0; iter < 1; iter++) {
       if (VERBOSE) {
         System.out.println("TEST: iter=" + iter);
       }
       MockDirectoryWrapper dir = newMockDirectory();
 
-      IndexWriter writer =
-          new IndexWriter(
-              dir,
-              newIndexWriterConfig(new MockAnalyzer(random()))
-                  .setMaxBufferedDocs(2)
-                  .setMergeScheduler(new ConcurrentMergeScheduler())
-                  .setMergePolicy(newLogMergePolicy(4))
-                  .setCommitOnClose(false));
+      IndexWriterConfig indexWriterConfig = newIndexWriterConfig(new MockAnalyzer(random()))
+              .setMaxBufferedDocs(2)
+              .setMergeScheduler(mergeScheduler)
+              .setMergePolicy(newLogMergePolicy(4))
+              .setCommitOnClose(false);
+      indexWriterConfig.setReaderPooling(true);
+      CountDownLatch mergeCountDownLatch = new CountDownLatch(1);
+      IndexWriter writer = new IndexWriter(dir, indexWriterConfig) {
+
+        @Override
+        void maybeCloseOnTragicEvent() throws IOException {
+          boolean isMerge = false;
+          for (StackTraceElement element : Thread.currentThread().getStackTrace()) {
+            final String className = element.getClassName();
+            final String methodName = element.getMethodName();
+            if (className.equals(IndexWriter.class.getName()) && methodName.equals("merge")) {
+              isMerge = true;
+              break;
+            }
+          }
+          if (isMerge == false) {
+            try {
+              updateDocumentFailCountDownLatch.countDown();
+              System.out.println("333333");
+              mergeCloseCountDownLatch.await();
+            } catch (InterruptedException e) {
+              throw new RuntimeException(e);
+            }
+          }
+          System.out.println("execute maybeCloseOnTragicEvent " + isMerge);
+          super.maybeCloseOnTragicEvent();
+        }
+        @Override
+        protected void merge(MergePolicy.OneMerge merge) throws IOException {
+//          try {
+//            Thread.sleep(500);
+//          } catch (Exception e) {}
+          mergeCountDownLatch.countDown();
+          try {
+            throw new IOException("execute merge");
+          } catch (Exception e) {
+            System.out.println("execute merge " + Throwables.getStacktrace(e));
+          }
+          try {
+              updateDocumentFailCountDownLatch.await();
+          } catch (InterruptedException e) {
+              throw new RuntimeException(e);
+          }
+          super.merge(merge);
+        }
+
+//        @Override
+//        public void onTragicEvent(Throwable tragedy, String location) {
+//          if (location.equals("updateDocuments")) {
+//              try {
+//                  System.out.println("updateDocuments onTragicEvent");
+//                  Thread.sleep(1000);
+//              } catch (InterruptedException e) {
+//                  throw new RuntimeException(e);
+//              }
+//          }
+//          System.out.println("onTragicEvent " + location);
+//          super.onTragicEvent(tragedy, location);
+//        }
+      };
       ((ConcurrentMergeScheduler) writer.getConfig().getMergeScheduler()).setSuppressExceptions();
 
       CyclicBarrier syncStart = new CyclicBarrier(NUM_THREADS + 1);
@@ -296,16 +373,19 @@ public class TestIndexWriterWithThreads extends LuceneTestCase {
         threads[i].start();
       }
       syncStart.await();
-      try {
-        Thread.sleep(500);
-      } catch (Exception e) {}
+      mergeCountDownLatch.await();
+      System.out.println("111111");
+//      try {
+//        Thread.sleep(500);
+//      } catch (Exception e) {}
       dir.failOn(failure);
       failure.setDoFail();
-
+      System.out.println("222222");
       for (int i = 0; i < NUM_THREADS; i++) {
         threads[i].join();
         assertTrue("hit unexpected Throwable", threads[i].error == null);
       }
+      System.out.println("444444");
 
       boolean success = false;
       try {
@@ -320,7 +400,7 @@ public class TestIndexWriterWithThreads extends LuceneTestCase {
           AlreadyClosedException ace) {
         // OK: abort closes the writer
         System.out.println("111 throw exception" + Throwables.getStacktrace(ace));
-        writer.close();
+//        writer.close();
         assertTrue(writer.isDeleterClosed());
       } catch (
           @SuppressWarnings("unused")
@@ -461,6 +541,10 @@ public class TestIndexWriterWithThreads extends LuceneTestCase {
   // LUCENE-1130: make sure initial IOException, and then 2nd
   // IOException during rollback(), with multiple threads, is OK:
   public void testIOExceptionDuringAbortWithThreadsOnlyOnce() throws Exception {
+    _testMultipleThreadsFailure(new FailOnlyOnAbortOrFlush(true));
+  }
+
+  public void testIOExceptionWithMergeNotFinishLongTime() throws Exception {
     _testMultipleThreadsFailure(new FailOnlyOnAbortOrFlush(true));
   }
 

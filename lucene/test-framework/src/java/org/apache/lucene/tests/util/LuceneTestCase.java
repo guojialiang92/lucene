@@ -1007,7 +1007,7 @@ public abstract class LuceneTestCase extends Assert {
       c.setMergedSegmentWarmer(new SimpleMergedSegmentWarmer(c.getInfoStream()));
     }
     c.setUseCompoundFile(r.nextBoolean());
-    c.setReaderPooling(true);
+    c.setReaderPooling(r.nextBoolean());
     if (rarely(r)) {
       c.setCheckPendingFlushUpdate(false);
     }

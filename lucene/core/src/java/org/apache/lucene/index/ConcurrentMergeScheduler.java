@@ -565,11 +565,11 @@ public class ConcurrentMergeScheduler extends MergeScheduler {
     // Iterate, pulling from the IndexWriter's queue of
     // pending merges, until it's empty:
     while (true) {
-
+      System.out.println("merge while true");
       if (maybeStall(mergeSource) == false) {
         break;
       }
-
+      System.out.println("merge while true 2222");
       OneMerge merge = mergeSource.getNextMerge();
       if (merge == null) {
         if (verbose()) {
@@ -577,6 +577,7 @@ public class ConcurrentMergeScheduler extends MergeScheduler {
         }
         return;
       }
+      System.out.println("merge while true 3333");
 
       boolean success = false;
       try {
@@ -591,12 +592,14 @@ public class ConcurrentMergeScheduler extends MergeScheduler {
           message("    launch new thread [" + newMergeThread.getName() + "]");
         }
 
+        System.out.println("merge thread start");
         newMergeThread.start();
         updateMergeThreads();
-
+        System.out.println("merge end");
         success = true;
       } finally {
         if (!success) {
+          System.out.println("merge finished");
           mergeSource.onMergeFinished(merge);
         }
       }
@@ -615,8 +618,9 @@ public class ConcurrentMergeScheduler extends MergeScheduler {
    */
   protected synchronized boolean maybeStall(MergeSource mergeSource) {
     long startStallTime = 0;
+    System.out.println("maxMergeCount " + maxMergeCount);
     while (mergeSource.hasPendingMerges() && mergeThreadCount() >= maxMergeCount) {
-
+      System.out.println("stall merge ");
       // This means merging has fallen too far behind: we
       // have already created maxMergeCount threads, and
       // now there's at least one more merge pending.
